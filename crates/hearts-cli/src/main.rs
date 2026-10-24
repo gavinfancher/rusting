@@ -5,7 +5,12 @@
 //! hearts-cli tournament --hands 100000 --seed 42 --strategies heuristic,heuristic,random,random --threads 8
 //! hearts-cli advise --hand "2C 7C 9D QS KS 3H 8H AH 4D 6D JC TS 5S" --samples 2000
 //! hearts-cli play --seed 1 --strategies heuristic,heuristic,random,random
+//! hearts-cli train --init zero --generations 25 --threads 12
+//! hearts-cli features --strategy linear:0,-6,...
 //! ```
+
+mod train;
+mod train_cli;
 
 use anyhow::{Context, Result, bail};
 use clap::{Args, Parser, Subcommand};
@@ -41,6 +46,10 @@ enum Command {
     Advise(AdviseArgs),
     /// Play one hand and print it trick by trick.
     Play(PlayArgs),
+    /// Learn the weights of the `linear` bot with the cross-entropy method.
+    Train(train_cli::TrainArgs),
+    /// Pretty-print the named weights of a `linear:...` strategy.
+    Features(train_cli::FeaturesArgs),
 }
 
 #[derive(Args)]
@@ -65,12 +74,8 @@ struct TournamentArgs {
     #[arg(long, default_value_t = 42)]
     seed: u64,
     /// Four comma-separated strategies: random | heuristic | pimc:N
-    #[arg(
-        long,
-        default_value = "heuristic,heuristic,random,random",
-        value_delimiter = ','
-    )]
-    strategies: Vec<StrategyKind>,
+    #[arg(long, default_value = "heuristic,heuristic,random,random")]
+    strategies: StrategyList,
     /// Worker threads (0 = all cores).
     #[arg(long, default_value_t = 0)]
     threads: usize,
@@ -127,17 +132,68 @@ struct PlayArgs {
     /// Which hand of the job to play (sets pass direction and seating).
     #[arg(long, default_value_t = 0)]
     hand_index: u64,
-    #[arg(
-        long,
-        default_value = "heuristic,heuristic,random,random",
-        value_delimiter = ','
-    )]
-    strategies: Vec<StrategyKind>,
+    #[arg(long, default_value = "heuristic,heuristic,random,random")]
+    strategies: StrategyList,
     #[command(flatten)]
     rules: CommonRules,
 }
 
-fn four(v: Vec<StrategyKind>) -> Result<[StrategyKind; 4]> {
+/// A comma-separated strategy list such as `heuristic,linear:1,2,...,24,random`.
+///
+/// `linear:` weights contain commas themselves, so clap's plain
+/// `value_delimiter` would cut them apart. Here a `linear:` item swallows the
+/// following items until it has `NUM_WEIGHTS` numbers. The shorthand
+/// `linear:default` means the hand-set starting weights.
+#[derive(Clone, Debug)]
+pub struct StrategyList(pub Vec<StrategyKind>);
+
+impl std::str::FromStr for StrategyList {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<StrategyList, String> {
+        let parts: Vec<&str> = s.split(',').map(str::trim).collect();
+        let mut out = Vec::new();
+        let mut i = 0;
+        while i < parts.len() {
+            let p = parts[i];
+            if p.eq_ignore_ascii_case("linear:default") {
+                out.push(StrategyKind::Linear(hearts_core::linear::default_weights()));
+                i += 1;
+            } else if p.to_ascii_lowercase().starts_with("linear:") {
+                let n = hearts_core::types::NUM_WEIGHTS;
+                let end = (i + n).min(parts.len());
+                out.push(parts[i..end].join(",").parse()?);
+                i = end;
+            } else {
+                out.push(p.parse()?);
+                i += 1;
+            }
+        }
+        Ok(StrategyList(out))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn strategy_list_keeps_linear_weights_together() {
+        let w = hearts_core::linear::default_weights();
+        let text = format!(
+            "heuristic,{},pimc:10,linear:default",
+            StrategyKind::Linear(w)
+        );
+        let list = text.parse::<StrategyList>().unwrap().0;
+        assert_eq!(list.len(), 4);
+        assert_eq!(list[1], StrategyKind::Linear(w));
+        assert_eq!(list[3], StrategyKind::Linear(w));
+        assert!("linear:1,2,3,random".parse::<StrategyList>().is_err());
+    }
+}
+
+fn four(v: StrategyList) -> Result<[StrategyKind; 4]> {
+    let v = v.0;
     let n = v.len();
     v.try_into()
         .map_err(|_| anyhow::anyhow!("need exactly 4 strategies, got {n}"))
@@ -155,6 +211,8 @@ fn main() -> Result<()> {
         Command::Tournament(a) => tournament(a),
         Command::Advise(a) => advise(a),
         Command::Play(a) => play(a),
+        Command::Train(a) => train_cli::train_cmd(a),
+        Command::Features(a) => train_cli::features_cmd(a),
     }
 }
 

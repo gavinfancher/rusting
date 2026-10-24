@@ -14,7 +14,14 @@ use std::hint::black_box;
 
 fn bench_hand(c: &mut Criterion) {
     let mut g = c.benchmark_group("hand");
-    for (name, bot) in [("random", Bot::Random), ("heuristic", Bot::Heuristic)] {
+    for (name, bot) in [
+        ("random", Bot::Random),
+        ("heuristic", Bot::Heuristic),
+        (
+            "linear",
+            Bot::Linear(hearts_core::linear::default_weights()),
+        ),
+    ] {
         let bots = [bot; 4];
         let mut i = 0u64;
         g.throughput(Throughput::Elements(1));
