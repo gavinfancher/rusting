@@ -12,6 +12,8 @@
 pub mod advisor;
 pub mod card;
 pub mod game;
+pub mod learn;
+pub mod linear;
 pub mod rng;
 pub mod rules;
 pub mod seed;

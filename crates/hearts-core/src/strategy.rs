@@ -11,9 +11,10 @@
 
 use crate::advisor;
 use crate::card::{Card, CardSet, Suit};
+use crate::linear;
 use crate::rng::Rng;
 use crate::rules::legal_moves;
-use crate::types::{PassDirection, PlayerView, StrategyKind};
+use crate::types::{PassDirection, PlayerView, StrategyKind, Weights};
 
 /// A player. `&self` (not `&mut`) because bots are stateless: everything they
 /// remember is in the view, and all randomness comes from the caller's `Rng`.
@@ -30,6 +31,7 @@ pub enum Bot {
     Random,
     Heuristic,
     Pimc { samples: u32 },
+    Linear(Weights),
 }
 
 impl Bot {
@@ -38,6 +40,7 @@ impl Bot {
             StrategyKind::Random => Bot::Random,
             StrategyKind::Heuristic => Bot::Heuristic,
             StrategyKind::Pimc { samples } => Bot::Pimc { samples },
+            StrategyKind::Linear(w) => Bot::Linear(w),
         }
     }
 }
@@ -45,11 +48,11 @@ impl Bot {
 impl Strategy for Bot {
     #[inline]
     fn choose_pass(&self, hand: CardSet, dir: PassDirection, rng: &mut Rng) -> CardSet {
-        let _ = dir;
         match self {
             Bot::Random => random_pass(hand, rng),
             // PIMC passes like the heuristic (searching a pass is out of scope).
             Bot::Heuristic | Bot::Pimc { .. } => heuristic_pass(hand),
+            Bot::Linear(w) => linear::linear_pass(w, hand, dir),
         }
     }
 
@@ -59,6 +62,7 @@ impl Strategy for Bot {
             Bot::Random => random_play(view, rng),
             Bot::Heuristic => heuristic_play(view),
             Bot::Pimc { samples } => pimc_play(view, *samples, rng),
+            Bot::Linear(w) => linear::linear_play(w, view),
         }
     }
 }

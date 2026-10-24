@@ -111,6 +111,73 @@ pub enum StrategyKind {
     Pimc {
         samples: u32,
     },
+    /// Learnable bot: scores each legal card as a weighted sum of features
+    /// (see [`FEATURE_NAMES`]) and plays the highest. Text form:
+    /// `"linear:w0,w1,...,w23"` (exactly [`NUM_WEIGHTS`] integers).
+    Linear(Weights),
+}
+
+/// Number of learnable weights: [`NUM_PLAY_FEATURES`] for choosing a card to
+/// play, then [`NUM_PASS_FEATURES`] for choosing cards to pass.
+pub const NUM_PLAY_FEATURES: usize = 16;
+pub const NUM_PASS_FEATURES: usize = 8;
+pub const NUM_WEIGHTS: usize = NUM_PLAY_FEATURES + NUM_PASS_FEATURES;
+
+/// CONTRACT: the meaning of each weight, in order. Feature values are small
+/// integers computed per candidate card (see `hearts_core::linear` for exact
+/// scaling); a card's score is `sum(weight[i] * feature[i])`, highest wins.
+/// Play features are evaluated for each legal card; pass features for each
+/// card in hand (the top 3 scores are passed).
+pub const FEATURE_NAMES: [&str; NUM_WEIGHTS] = [
+    // --- play (0..16) ---
+    "play.leading",                 // 1 if we are leading the trick
+    "play.rank",                    // card rank, 2 = low .. A = high
+    "play.is_heart",                // card is a heart
+    "play.is_queen_spades",         // card is Q♠
+    "play.high_spade_queen_unseen", // card is K♠/A♠ and Q♠ is still out
+    "play.wins_now",                // card would currently win the trick
+    "play.wins_x_points_on_table",  // wins_now × penalty points already in the trick
+    "play.wins_x_last_to_play",     // wins_now × we are the 4th player (win is certain)
+    "play.wins_x_my_points",        // wins_now × points we've taken this hand (moon shooting)
+    "play.dump_x_points",           // void in led suit × this card's penalty points
+    "play.dump_x_rank",             // void in led suit × rank
+    "play.makes_void",              // playing it leaves us void in that suit
+    "play.suit_len_after",          // cards of this suit we'd still hold
+    "play.higher_unseen",           // unseen cards of this suit that outrank it
+    "play.lower_unseen",            // unseen cards of this suit below it
+    "play.lead_low_spade_fishing",  // leading a spade below Q while Q♠ is still out
+    // --- pass (16..24) ---
+    "pass.rank",
+    "pass.heart_x_rank",
+    "pass.is_queen_spades",
+    "pass.is_high_spade",         // K♠ or A♠
+    "pass.spades_guarded_x_high", // holding 3+ spades below Q × card is Q♠/K♠/A♠
+    "pass.short_side_suit",       // clubs/diamonds: 4 - suit length, if length <= 3
+    "pass.is_low",                // rank <= 5
+    "pass.side_suit_x_rank",      // clubs/diamonds × rank
+];
+
+/// The learnable parameters of [`StrategyKind::Linear`]. Integers (not
+/// floats) so strategies stay `Eq + Hash` and scoring is exact and
+/// deterministic on every CPU.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Weights(pub [i32; NUM_WEIGHTS]);
+
+/// Serialized as a JSON array of integers.
+impl Serialize for Weights {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.collect_seq(self.0.iter())
+    }
+}
+
+impl<'de> Deserialize<'de> for Weights {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Weights, D::Error> {
+        let v = Vec::<i32>::deserialize(d)?;
+        let arr: [i32; NUM_WEIGHTS] = v.try_into().map_err(|v: Vec<i32>| {
+            serde::de::Error::custom(format!("expected {NUM_WEIGHTS} weights, got {}", v.len()))
+        })?;
+        Ok(Weights(arr))
+    }
 }
 
 impl fmt::Display for StrategyKind {
@@ -119,6 +186,16 @@ impl fmt::Display for StrategyKind {
             StrategyKind::Random => f.write_str("random"),
             StrategyKind::Heuristic => f.write_str("heuristic"),
             StrategyKind::Pimc { samples } => write!(f, "pimc:{samples}"),
+            StrategyKind::Linear(w) => {
+                f.write_str("linear:")?;
+                for (i, x) in w.0.iter().enumerate() {
+                    if i > 0 {
+                        f.write_str(",")?;
+                    }
+                    write!(f, "{x}")?;
+                }
+                Ok(())
+            }
         }
     }
 }
@@ -128,6 +205,17 @@ impl FromStr for StrategyKind {
 
     fn from_str(s: &str) -> Result<StrategyKind, String> {
         let s = s.trim().to_ascii_lowercase();
+        if let Some(list) = s.strip_prefix("linear:") {
+            let v = list
+                .split(',')
+                .map(|x| x.trim().parse::<i32>())
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|e| format!("linear weights: {e}"))?;
+            let arr: [i32; NUM_WEIGHTS] = v.try_into().map_err(|v: Vec<i32>| {
+                format!("linear: expected {NUM_WEIGHTS} weights, got {}", v.len())
+            })?;
+            return Ok(StrategyKind::Linear(Weights(arr)));
+        }
         match s.as_str() {
             "random" => Ok(StrategyKind::Random),
             "heuristic" => Ok(StrategyKind::Heuristic),
@@ -137,7 +225,7 @@ impl FromStr for StrategyKind {
                     .and_then(|n| n.parse::<u32>().ok())
                     .filter(|&n| n > 0)
                     .ok_or_else(|| {
-                        format!("unknown strategy {s:?} (expected random | heuristic | pimc:N)")
+                        format!("unknown strategy {s:?} (expected random | heuristic | pimc:N | linear:w0,..,w23)")
                     })?;
                 Ok(StrategyKind::Pimc { samples: n })
             }
@@ -378,6 +466,14 @@ mod tests {
             assert_eq!(s.parse::<StrategyKind>().unwrap().to_string(), s);
         }
         assert!("pimc:0".parse::<StrategyKind>().is_err());
+        let mut w = [0i32; NUM_WEIGHTS];
+        w[0] = -12;
+        w[NUM_WEIGHTS - 1] = 340;
+        let lin = StrategyKind::Linear(Weights(w));
+        assert_eq!(lin.to_string().parse::<StrategyKind>().unwrap(), lin);
+        assert!("linear:1,2,3".parse::<StrategyKind>().is_err());
+        let json = serde_json::to_string(&Weights(w)).unwrap();
+        assert_eq!(serde_json::from_str::<Weights>(&json).unwrap(), Weights(w));
         assert!("greedy".parse::<StrategyKind>().is_err());
     }
 
