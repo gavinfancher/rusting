@@ -72,20 +72,12 @@ In Grafana, open "Hearts Overview": active workers should be 3. In Prometheus (S
 - Database shell: `make psql`.
 - Tear down: `make undeploy` (the Postgres PVC is retained; `kubectl -n hearts delete pvc data-hearts-db-0` to wipe).
 
-## Adding TLS later
+## TLS
 
-The Ingress is plain HTTP like the other apps. With cert-manager already installed, add to
-`base/ingress.yaml` (and the Grafana ingress in the Helm values):
-```yaml
-metadata:
-  annotations:
-    cert-manager.io/cluster-issuer: letsencrypt-prod
-spec:
-  tls:
-    - hosts: [hearts.k8s.ad.gavinf.com]
-      secretName: hearts-tls
-```
-Note Let's Encrypt HTTP-01 needs the host reachable from the internet; on a tailnet-only name use a DNS-01 issuer.
+Nothing to do. Traefik on this cluster has a default `TLSStore` (namespace `kube-system`) holding a
+valid wildcard certificate for `*.k8s.ad.gavinf.com` (Secret `wildcard-k8s-ad-gavinf-com-tls`), and it
+redirects all HTTP to HTTPS. Every Ingress, including ours and Grafana's, is served over HTTPS
+automatically: https://hearts.k8s.ad.gavinf.com and https://grafana.k8s.ad.gavinf.com.
 
 ## Notes
 
