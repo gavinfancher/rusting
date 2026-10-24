@@ -21,3 +21,5 @@ configMapGenerator:
     files: [hearts-advisor.json]
   - name: hearts-dashboard-postgres
     files: [hearts-postgres.json]
+  - name: hearts-dashboard-training
+    files: [hearts-training.json]

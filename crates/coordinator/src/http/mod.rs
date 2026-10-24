@@ -9,6 +9,7 @@ pub mod benchmarks;
 pub mod health;
 pub mod jobs;
 pub mod static_files;
+pub mod training;
 pub mod workers;
 
 use crate::{db::DbError, state::AppState};
@@ -110,6 +111,9 @@ pub fn router(state: AppState) -> Router {
         .route("/api/jobs/{id}", get(jobs::get_one))
         .route("/api/jobs/{id}/cancel", post(jobs::cancel))
         .route("/api/jobs/{id}/events", get(jobs::events))
+        .route("/api/training", post(training::create).get(training::list))
+        .route("/api/training/{id}", get(training::get_one))
+        .route("/api/training/{id}/cancel", post(training::cancel))
         .route("/api/advise", post(advise::advise))
         .route("/api/workers", get(workers::list))
         .route(

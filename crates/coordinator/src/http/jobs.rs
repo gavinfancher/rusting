@@ -42,11 +42,12 @@ pub async fn create(
 ) -> Result<(StatusCode, Json<Job>), ApiError> {
     let req: CreateJob = parse_json(&body)?;
 
-    let strategies: Vec<StrategyKind> = req
-        .strategies
-        .iter()
-        .map(|s| s.parse::<StrategyKind>().map_err(ApiError::bad_request))
-        .collect::<Result<_, _>>()?;
+    // `champion:<run_id>` aliases are resolved here, before validation, so
+    // the stored spec holds the concrete `linear:...` weights.
+    let mut strategies: Vec<StrategyKind> = Vec::with_capacity(req.strategies.len());
+    for s in &req.strategies {
+        strategies.push(super::training::resolve_strategy(&state.db, s).await?);
+    }
     let strategies: [StrategyKind; 4] = strategies.try_into().map_err(|v: Vec<_>| {
         ApiError::bad_request(format!(
             "strategies must have exactly 4 entries, got {}",
@@ -114,7 +115,8 @@ pub async fn list(
             .filter(|n| (1..=500).contains(n))
             .ok_or_else(|| ApiError::bad_request("limit must be between 1 and 500"))?,
     };
-    Ok(Json(state.db.list_jobs(limit).await?))
+    let include_training = params.get("include_training").is_some_and(|v| v == "true");
+    Ok(Json(state.db.list_jobs(limit, include_training).await?))
 }
 
 /// `GET /api/jobs/{id}`

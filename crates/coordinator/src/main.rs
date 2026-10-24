@@ -12,6 +12,7 @@ use coordinator::{
     http,
     metrics::Metrics,
     state::AppState,
+    trainer,
 };
 use std::sync::Arc;
 use std::time::Duration;
@@ -104,6 +105,8 @@ async fn main() -> anyhow::Result<()> {
     });
 
     // --- background sweeper / gauges ---
+    // --- training: the trainer task advances CEM runs (all state in Postgres) ---
+    let trainer = tokio::spawn(trainer::run(state.clone()));
     let bg = tokio::spawn(background::run(state));
 
     wait_for_signal().await;
@@ -123,6 +126,7 @@ async fn main() -> anyhow::Result<()> {
             Ok(Ok(())) => {}
         }
         let _ = bg.await;
+        let _ = trainer.await;
     };
     if tokio::time::timeout(Duration::from_secs(20), drain)
         .await

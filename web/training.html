@@ -1,0 +1,92 @@
+<!doctype html>
+<!-- Training page: start form, runs list, and live run detail (?id=N). Logic lives in app.js (page "training"). -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Hearts Training</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="style.css">
+</head>
+<body data-page="training">
+<header class="top"><strong>Hearts</strong><nav id="nav" aria-label="Main"></nav></header>
+<main>
+  <h1>Training</h1>
+  <p class="muted">Evolve the weights of the <code>linear</code> bot with the cross-entropy method. Each candidate is scored by an ordinary tournament on the cluster; lower average points per hand is better.</p>
+
+  <section id="detail" hidden aria-label="Training run detail">
+    <div class="panel">
+      <div class="kv"><h2 id="d-title" style="margin:0">Run</h2><span id="d-status"></span>
+        <button type="button" class="danger" id="d-cancel">Cancel run</button></div>
+      <p class="muted" id="d-sub"></p>
+      <div id="d-error"></div>
+      <p id="d-gen" style="margin-bottom:4px"></p>
+      <div class="progress" role="progressbar" aria-label="Candidates evaluated in this generation" id="d-progress" aria-valuemin="0" aria-valuemax="100"><span id="d-progress-fill"></span></div>
+      <p class="muted" id="d-progress-text"></p>
+    </div>
+
+    <div class="panel">
+      <h2 style="margin-top:0">Learning curve</h2>
+      <svg class="chart" id="d-chart" viewBox="0 0 640 300" role="img" aria-label="Learning curve"></svg>
+      <div class="legend" id="d-chart-legend"></div>
+    </div>
+
+    <div class="panel" id="d-champion-panel" hidden>
+      <h2 style="margin-top:0">Champion</h2>
+      <p id="d-champion-fit" class="muted"></p>
+      <div class="kv"><code class="strategy" id="d-champion-code"></code>
+        <button type="button" id="d-copy">Copy</button></div>
+      <p class="muted">Use it in a tournament as <code id="d-alias">champion:N</code> (resolved when the job is created).</p>
+      <p id="d-validation"></p>
+    </div>
+
+    <div class="panel tablewrap" id="d-weights-panel" hidden>
+      <table>
+        <caption class="muted" style="text-align:left">Champion weights (positive = more likely to play or pass the card)</caption>
+        <thead><tr><th>Feature</th><th>What it means</th><th class="num">Weight</th><th aria-label="Weight bar"></th></tr></thead>
+        <tbody id="d-weights"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <h2>Start a training run</h2>
+  <form class="panel" id="launch">
+    <div class="row">
+      <label>Name <input type="text" id="f-name" placeholder="optional"></label>
+      <label>Population <input type="number" id="f-pop" min="4" max="256" value="24" required></label>
+      <label>Generations <input type="number" id="f-gens" min="1" max="1000" value="30" required></label>
+      <label>Hands per candidate <input type="number" id="f-hands" min="100" max="10000000" value="40000" required></label>
+      <label>Start from
+        <select id="f-init"><option value="heuristic">heuristic (starts good)</option><option value="zero">zero (dramatic curve)</option></select></label>
+      <label>Seed (optional) <input type="number" id="f-seed" min="0" max="9007199254740991" placeholder="random"></label>
+    </div>
+    <div class="row" id="f-opps"></div>
+    <details>
+      <summary>Advanced</summary>
+      <div class="row" style="margin-top:8px">
+        <label>Elites <input type="number" id="f-elites" min="1" placeholder="6"></label>
+        <label>Unit size <input type="number" id="f-unit" min="1" max="1000000" placeholder="5000"></label>
+        <label>Sigma0 <input type="number" id="f-sigma0" min="0.1" step="any" placeholder="20"></label>
+        <label>Smoothing (0-1) <input type="number" id="f-smooth" min="0.01" max="1" step="any" placeholder="0.7"></label>
+        <label>Min sigma <input type="number" id="f-minsig" min="0" step="any" placeholder="2"></label>
+        <label>Validation hands <input type="number" id="f-vhands" min="1" placeholder="200000"></label>
+        <label style="flex-direction:row;align-items:center;gap:6px;color:var(--text)"><input type="checkbox" id="f-rule" checked> No points on first trick</label>
+      </div>
+    </details>
+    <button type="submit" class="primary">Start training</button>
+  </form>
+
+  <h2>Runs</h2>
+  <div class="panel tablewrap">
+    <table>
+      <thead><tr><th>ID</th><th>Name</th><th>Status</th><th class="num">Generation</th><th class="num">Champion</th><th>Validation</th><th>Started</th></tr></thead>
+      <tbody id="runs"></tbody>
+    </table>
+  </div>
+</main>
+<div id="toasts" role="status" aria-live="polite"></div>
+<script src="mock.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

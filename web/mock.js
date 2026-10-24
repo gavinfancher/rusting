@@ -15,7 +15,7 @@
       unit_size: 5000, seed: 99, status: "cancelled", created: t0 - 7200e3, started: t0 - 7199e3, finished: t0 - 7150e3, fixed: 0.4 },
   ];
   // Mean points per hand by strategy family: lower is better.
-  const AVG = { random: 7.4, heuristic: 5.6, pimc: 4.9 };
+  const AVG = { random: 7.4, heuristic: 5.6, pimc: 4.9, linear: 5.4 };
 
   function frac(j) {
     if (j.fixed != null) return j.fixed;
@@ -53,6 +53,71 @@
     };
   }
 
+
+  // ---------- training fixtures ----------
+  const FEATURES = ["play.leading", "play.rank", "play.is_heart", "play.is_queen_spades", "play.high_spade_queen_unseen",
+    "play.wins_now", "play.wins_x_points_on_table", "play.wins_x_last_to_play", "play.wins_x_my_points", "play.dump_x_points",
+    "play.dump_x_rank", "play.makes_void", "play.suit_len_after", "play.higher_unseen", "play.lower_unseen",
+    "play.lead_low_spade_fishing", "pass.rank", "pass.heart_x_rank", "pass.is_queen_spades", "pass.is_high_spade",
+    "pass.spades_guarded_x_high", "pass.short_side_suit", "pass.is_low", "pass.side_suit_x_rank"];
+  // A plausible "learned" weight vector (the final champion of a long run).
+  const FINAL_W = [-12, -3, -30, -90, -40, -25, -6, 18, -10, 14, 2, 9, -2, -4, 3, 7, 5, 4, 80, 35, -20, 6, -3, 2];
+  const TRAIN_STEP_MS = 5000; // the live mock run finishes one generation every 5 s
+  const runs = [
+    { id: 1, name: "first run", gens: 30, pop: 24, hpc: 40000, init: "heuristic", seed: 1, created: t0 - 86400e3, done: true },
+    { id: 2, name: "from scratch (zero init)", gens: 30, pop: 24, hpc: 40000, init: "zero", seed: 2, created: t0 - 1000, done: false },
+  ];
+  // Learning curve: exponential approach to a floor, with deterministic wiggle.
+  function curveAt(r, g) {
+    const start = r.init === "zero" ? 8.6 : 6.5, floor = r.init === "zero" ? 5.95 : 5.9, tau = r.init === "zero" ? 7 : 9;
+    const mean = floor + (start - floor) * Math.exp(-g / tau) + 0.05 * Math.sin(g * 1.7);
+    const best = mean - 0.16 - 0.04 * Math.abs(Math.cos(g * 2.3));
+    return { mean, best, elite: mean - 0.1, pop: mean + 0.35 };
+  }
+  function trainGen(r) {
+    if (r.frozen != null) return r.frozen;
+    if (r.done) return r.gens;
+    return Math.min(r.gens, Math.floor((Date.now() - r.created) / TRAIN_STEP_MS));
+  }
+  function trainView(r, withGens) {
+    const g = trainGen(r), allDone = g >= r.gens;
+    let status = r.status || "running";
+    if (!r.status) {
+      if (r.done) status = "done";
+      else if (allDone) status = Date.now() - r.created > r.gens * TRAIN_STEP_MS + 8000 ? "done" : "validating";
+    }
+    if (!r.status && status === "done" && !r.done) r.finishedAt = r.finishedAt || Date.now();
+    const gens = [];
+    for (let i = 0; i < g; i++) {
+      const c = curveAt(r, i), at = r.created + i * TRAIN_STEP_MS;
+      gens.push({ generation: i, seed: 1000 + i * 7919, mean_fitness: +c.mean.toFixed(3), best_fitness: +c.best.toFixed(3),
+        elite_mean_fitness: +c.elite.toFixed(3), population_mean_fitness: +c.pop.toFixed(3),
+        sigma_mean: +(2 + 18 * Math.exp(-i / 12)).toFixed(2), started_at: iso(at), finished_at: iso(at + TRAIN_STEP_MS),
+        elapsed_ms: TRAIN_STEP_MS });
+    }
+    const k = Math.min(1, g / r.gens);
+    const w = FINAL_W.map((x) => Math.round(x * k));
+    const live = status === "running" && g < r.gens;
+    const frac = live ? ((Date.now() - r.created) % TRAIN_STEP_MS) / TRAIN_STEP_MS : 0;
+    const finished = status === "done" || status === "failed" || status === "cancelled";
+    const cfg = { name: r.name, population: r.pop, elites: 6, generations: r.gens, hands_per_candidate: r.hpc, unit_size: 5000,
+      opponents: ["heuristic", "heuristic", "heuristic"], init: r.init, sigma0: 20, smoothing: 0.7, min_sigma: 2,
+      seed: r.seed, validation_hands: 200000, rules: { no_points_first_trick: true } };
+    const endC = curveAt(r, r.gens - 1);
+    const out = {
+      id: r.id, name: r.name, status, config: cfg, seed: r.seed, generation: g, generations_total: r.gens,
+      current: live ? { generation: g, candidates_total: r.pop, candidates_done: Math.floor(frac * r.pop),
+        hands_done: Math.round(frac * r.pop * r.hpc), hands_total: r.pop * r.hpc } : null,
+      champion: g >= 1 ? { strategy: "linear:" + w.join(","), fitness: +curveAt(r, g - 1).mean.toFixed(3),
+        weights: FEATURES.map((f, i) => ({ feature: f, weight: w[i] })) } : null,
+      validation: status === "done" ? { hands: 200000, champion_fitness: +(endC.mean - 0.01).toFixed(2),
+        baseline_fitness: 6.49, champion_job_id: 90 + r.id * 2, baseline_job_id: 91 + r.id * 2 } : null,
+      created_at: iso(r.created), finished_at: finished ? iso(r.finishedAt || r.created + 3600e3) : null, last_error: null,
+    };
+    if (withGens) out.generations = gens;
+    return out;
+  }
+
   const nodes = ["k8s-w1", "k8s-w2", "k8s-w3"];
   function workers() {
     const now = Date.now(), list = [];
@@ -80,6 +145,17 @@
       shards: 3, shards_failed: partial ? 1 : 0, latency_ms: 80 + Math.round(samples / 100) };
   }
 
+  // `champion:N` -> that run's current champion (the real API does this server-side).
+  function resolveChampion(s) {
+    const m = /^champion:(\d+)$/.exec(s);
+    if (!m) return s;
+    const r = runs.find((x) => x.id === +m[1]);
+    if (!r) throw new Error(`training run ${m[1]} not found`);
+    const c = trainView(r, false).champion;
+    if (!c) throw new Error(`training run ${m[1]} has no champion yet`);
+    return c.strategy;
+  }
+
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   async function handle(method, path, body) {
     await wait(60);
@@ -87,7 +163,22 @@
     let m;
     if (method === "GET" && p === "/api/workers") return workers();
     if (method === "GET" && p === "/api/jobs") return jobs.slice().reverse().map(view);
+    if (method === "GET" && p === "/api/training") return runs.slice().reverse().map((r) => trainView(r, false));
+    if (method === "POST" && p === "/api/training") {
+      const b = body || {};
+      const r = { id: runs.length + 1, name: b.name || `run ${runs.length + 1}`, gens: b.generations || 30, pop: b.population || 24,
+        hpc: b.hands_per_candidate || 40000, init: b.init || "heuristic", seed: b.seed ?? 1234, created: Date.now(), done: false };
+      runs.push(r);
+      return trainView(r, true);
+    }
+    if ((m = p.match(/^\/api\/training\/(\d+)(\/cancel)?$/))) {
+      const r = runs.find((x) => x.id === +m[1]);
+      if (!r) throw new Error("training run not found");
+      if (m[2] && !r.done && !r.status) { r.frozen = trainGen(r); r.status = "cancelled"; r.finishedAt = Date.now(); }
+      return trainView(r, true);
+    }
     if (method === "POST" && p === "/api/jobs") {
+      body = { ...body, strategies: body.strategies.map(resolveChampion) };
       const j = { id: jobs.length + 1, name: body.name || `job ${jobs.length + 1}`, strategies: body.strategies,
         num_hands: body.num_hands, unit_size: body.unit_size || 2000, seed: body.seed ?? 1234,
         status: "running", created: Date.now(), started: Date.now(), finished: null, fixed: null };

@@ -38,6 +38,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
+mod training;
+pub use training::*;
+
 #[derive(Debug, thiserror::Error)]
 pub enum DbError {
     #[error("database error: {0}")]
@@ -119,6 +122,7 @@ struct JobRow {
     started_at: Option<DateTime<Utc>>,
     finished_at: Option<DateTime<Utc>>,
     elapsed_ms: Option<i64>,
+    training_run_id: Option<i64>,
 }
 
 #[derive(sqlx::FromRow)]
@@ -176,9 +180,28 @@ impl Db {
     ) -> Result<i64> {
         let _t = self.timer("create_job");
         let mut tx = self.pool.begin().await?;
+        let job_id =
+            Self::create_job_in_tx(&mut tx, name, spec, num_hands, unit_size, None).await?;
+        tx.commit().await?;
+        self.metrics.jobs_created.inc();
+        Ok(job_id)
+    }
+
+    /// The body of [`Db::create_job`], taking an open transaction so the
+    /// trainer can create a whole generation (many jobs plus its bookkeeping
+    /// rows) atomically. The caller commits and bumps `jobs_created`.
+    /// `training_run_id` tags jobs that belong to a training run.
+    pub async fn create_job_in_tx(
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        name: Option<&str>,
+        spec: &JobSpec,
+        num_hands: i64,
+        unit_size: i32,
+        training_run_id: Option<i64>,
+    ) -> Result<i64> {
         let (job_id,): (i64,) = sqlx::query_as(
-            "INSERT INTO jobs (name, spec, seed, num_hands, unit_size)
-             VALUES ($1, $2, $3, $4, $5) RETURNING id",
+            "INSERT INTO jobs (name, spec, seed, num_hands, unit_size, training_run_id)
+             VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
         )
         .bind(name)
         .bind(Json(spec))
@@ -186,7 +209,8 @@ impl Db {
         .bind(spec.seed as i64)
         .bind(num_hands)
         .bind(unit_size)
-        .fetch_one(&mut *tx)
+        .bind(training_run_id)
+        .fetch_one(&mut **tx)
         .await?;
 
         // ceil(num_hands / unit_size) units, numbered k = 0 .. count-1.
@@ -201,10 +225,8 @@ impl Db {
         .bind(job_id)
         .bind(num_hands)
         .bind(i64::from(unit_size))
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await?;
-        tx.commit().await?;
-        self.metrics.jobs_created.inc();
         Ok(job_id)
     }
 
@@ -213,13 +235,19 @@ impl Db {
     }
 
     /// Newest first.
-    pub async fn list_jobs(&self, limit: i64) -> Result<Vec<Job>> {
+    /// Jobs created by training runs are hidden unless `include_training`.
+    pub async fn list_jobs(&self, limit: i64, include_training: bool) -> Result<Vec<Job>> {
         let ids: Vec<(i64,)> = {
             let _t = self.timer("list_jobs");
-            sqlx::query_as("SELECT id FROM jobs ORDER BY id DESC LIMIT $1")
-                .bind(limit)
-                .fetch_all(&self.pool)
-                .await?
+            sqlx::query_as(
+                "SELECT id FROM jobs
+                  WHERE $2 OR training_run_id IS NULL
+                  ORDER BY id DESC LIMIT $1",
+            )
+            .bind(limit)
+            .bind(include_training)
+            .fetch_all(&self.pool)
+            .await?
         };
         let ids: Vec<i64> = ids.into_iter().map(|(i,)| i).collect();
         self.load_jobs(&ids).await
@@ -238,7 +266,7 @@ impl Db {
         let _t = self.timer("stats");
         let rows: Vec<JobRow> = sqlx::query_as(
             "SELECT id, name, status::text AS status, spec, num_hands, unit_size,
-                    created_at, started_at, finished_at,
+                    created_at, started_at, finished_at, training_run_id,
                     CASE WHEN started_at IS NULL THEN NULL
                          ELSE (EXTRACT(EPOCH FROM (COALESCE(finished_at, now()) - started_at))
                                * 1000)::bigint END AS elapsed_ms
@@ -355,6 +383,7 @@ impl Db {
                     standings,
                     elapsed_ms: r.elapsed_ms,
                     hands_per_sec,
+                    training_run_id: r.training_run_id,
                 },
             );
         }
