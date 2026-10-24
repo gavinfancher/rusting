@@ -1,3 +1,37 @@
 <!doctype html>
-<!-- Placeholder so rust-embed has a folder to embed. Agent D replaces this. -->
-<html><head><meta charset="utf-8"><title>Hearts Cluster</title></head><body><h1>Hearts Cluster</h1><p>UI coming soon.</p></body></html>
+<!-- Cluster page: workers table, summary strip and running job. Logic lives in app.js (page "cluster"). -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Hearts Cluster</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="style.css">
+</head>
+<body data-page="cluster">
+<header class="top"><strong>Hearts</strong><nav id="nav" aria-label="Main"></nav></header>
+<main>
+  <h1>Cluster</h1>
+  <section class="strip" aria-label="Summary">
+    <div class="stat"><div class="v" id="s-workers">-</div><div class="l">active workers</div></div>
+    <div class="stat"><div class="v" id="s-threads">-</div><div class="l">total threads</div></div>
+    <div class="stat"><div class="v" id="s-hps">-</div><div class="l">cluster hands/sec</div></div>
+    <div class="stat"><div class="v" id="s-job">-</div><div class="l">running job</div></div>
+  </section>
+  <h2>Nodes</h2>
+  <div class="strip" id="nodes" aria-live="polite"></div>
+  <h2>Workers</h2>
+  <div class="panel tablewrap">
+    <table>
+      <thead><tr><th>Pod</th><th>Node</th><th class="num">Threads</th><th>Status</th><th class="num">Leased units</th><th>Last seen</th></tr></thead>
+      <tbody id="workers"></tbody>
+    </table>
+  </div>
+  <p><a id="grafana" rel="noopener" target="_blank">Open Grafana dashboards</a></p>
+</main>
+<div id="toasts" role="status" aria-live="polite"></div>
+<script src="mock.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
