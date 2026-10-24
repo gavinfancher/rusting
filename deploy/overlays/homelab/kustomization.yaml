@@ -11,10 +11,10 @@ resources:
 images:
   - name: ghcr.io/gavinfancher/hearts-coordinator
     newName: ghcr.io/gavinfancher/hearts-coordinator
-    newTag: sha-d11e3e1
+    newTag: sha-7a9ae6d
   - name: ghcr.io/gavinfancher/hearts-worker
     newName: ghcr.io/gavinfancher/hearts-worker
-    newTag: sha-d11e3e1
+    newTag: sha-7a9ae6d
 
 # Secret generated from a git-ignored env file (copy db.env.example -> db.env).
 # Kustomize appends a content hash to the name and rewrites references to it, so

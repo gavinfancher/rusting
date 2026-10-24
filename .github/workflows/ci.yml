@@ -4,7 +4,10 @@ name: ci
 on:
   push:
     branches: [main]
+    # Pinning an image tag (deploy/) or editing docs shouldn't rebuild images.
+    paths-ignore: ['deploy/**', 'docs/**', 'scripts/**', '**/*.md']
   pull_request:
+    paths-ignore: ['deploy/**', 'docs/**', 'scripts/**', '**/*.md']
 
 env:
   CARGO_TERM_COLOR: always
