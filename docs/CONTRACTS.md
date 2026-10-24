@@ -256,4 +256,7 @@ Cancel also cancels the run's non-terminal jobs.
 | `hearts_training_latest_best_fitness` | gauge | `best_fitness` of that generation |
 
 ## Proposed changes
-_(none yet)_
+- (Agent H) Coordinator env var `TRAINER_TICK_MS=2000`: how often the trainer task looks at running training runs.
+- (Agent H) `elites` defaults to `min(6, population-1)` so a request that only sets a small `population` is valid.
+- (Agent H) A run whose validation job fails or is cancelled ends `failed` (with `last_error`); a candidate whose job fails scores `INFINITY` and appears as `null` in JSON fitness fields.
+- (Agent H) Generation `seed` values are full u64 (they can exceed 2^53, so JS clients lose precision; the UI doesn't display them).

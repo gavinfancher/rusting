@@ -4,7 +4,7 @@ A game day is a rehearsal: you cause a failure you chose, with a hypothesis abou
 and you check it against Grafana, `kubectl` and a pass/fail test. The point is to practise being the sysadmin
 **before** something breaks at a bad time, and to learn the Kubernetes mechanisms by watching them work.
 
-There are ten drills. Nine have scripts in `scripts/gamedays/`; the tenth (power off a node) is guided and manual.
+There are eleven drills (11 needs the training feature). Ten have scripts in `scripts/gamedays/`; the tenth (power off a node) is guided and manual.
 Everything is written so that a failure does not damage anything: each script restores what it changed, even if you press Ctrl-C.
 
 | # | Drill | Script | Mechanism you will see |
@@ -19,6 +19,7 @@ Everything is written so that a failure does not damage anything: each script re
 | 8 | [Poison unit](#drill-8-poison-unit) | `08-poison-unit.sh` | `catch_unwind`, MAX_ATTEMPTS, alerting |
 | 9 | [Lease shorter than the unit runtime](#drill-9-lease-shorter-than-the-unit-runtime) | `09-short-lease.sh` | duplicate/wasted work, idempotent completion |
 | 10 | [Whole node down](#drill-10-whole-node-down-manual) | `10-node-down.sh` (guided) | node-monitor grace, taint eviction timers |
+| 11 | [Kill the coordinator mid-training](#drill-11-kill-the-coordinator-mid-training) | `11-kill-coordinator-mid-training.sh` | transactional state machine, advisory lock, deterministic resume |
 
 ## How it works
 
@@ -497,6 +498,47 @@ kubectl -n hearts get endpoints hearts-worker-metrics hearts-worker-headless
 2. Why did the job finish before Kubernetes replaced the pods? What does that say about application-level leases vs infrastructure failure detection?
 3. Why does a StatefulSet refuse to start a replacement automatically? What does "at most one" protect (two Postgres on one disk)?
 4. With 3 workers on 3 nodes and the PDB, can you afford a node loss for *capacity*, given each pod requests 2 of ~6 CPUs?
+
+---
+
+## Drill 11: Kill the coordinator mid-training
+
+**Hypothesis.** Training (see `docs/CONTRACTS.md` "Training" and the module docs of `crates/coordinator/src/trainer.rs`) keeps **all** of its state in Postgres: the CEM belief (`training_runs.state`),
+the generation counter, every candidate and its tournament job. Each trainer step (create a generation, judge a generation, start validation) runs in a **single transaction**
+that holds a Postgres advisory lock for the run, so killing the coordinator at any instant either loses a whole step (rolled back, redone next tick) or none of it.
+The new pod's trainer finds the run in the same state and carries on. The jobs themselves are ordinary jobs, so the workers neither know nor care.
+Because every step is deterministic, the finished run's **champion weights equal what `hearts-cli train` computes locally** from the same config and seed.
+
+**Command.** `scripts/gamedays/11-kill-coordinator-mid-training.sh`
+(starts 6 generations x 8 candidates x 20,000 hands, then a 20,000-hand validation; `TRAIN_TIMEOUT` caps the wait, default 1200 s).
+
+**Watch.**
+- `Hearts Training` -> "Fitness per generation": the curve continues after the restart (it is read back from the database, so a restart does not reset it).
+- `Hearts Training` -> "Generations per hour": `hearts_training_generations_total` restarts from zero in the new pod, but the `increase()` keeps working.
+- The UI at `/training.html?id=N`: it polls every 2 s, shows errors while the pod is down, and resumes by itself.
+
+**Diagnose (practise).**
+```bash
+kubectl -n hearts get pods -l app.kubernetes.io/name=hearts-coordinator -w
+kubectl -n hearts logs deploy/hearts-coordinator | grep -i trainer
+curl -s $BASE_URL/api/training/N | jq '{status,generation,current,last_error}'
+kubectl -n hearts exec hearts-db-0 -- psql -U hearts -c 'select run_id, generation, count(*) from training_candidates group by 1,2 order by 2'
+```
+
+**Recover.** Automatic. If `last_error` is set on the run the trainer is retrying; after 5 consecutive failures it marks the run `failed` and cancels its jobs.
+
+**Pass criteria (automatic).** A new coordinator pod serves; the run reaches `done`; exactly `generations` generation rows (no duplicates, none lost); exactly `generations x population + 2` jobs
+tagged with the run; and, when `hearts-cli` is on your PATH, its champion equals the cluster's. If it is not on the PATH the script prints the exact command to run yourself:
+
+```bash
+hearts-cli train --init zero --population 8 --elites 2 --generations 6 --hands 20000 --validation-hands 20000 --seed 1
+```
+
+**Questions.**
+1. What would go wrong if the trainer created a generation's jobs one `INSERT` at a time, committing each? What exactly makes the single transaction safe if the pod is killed between two statements?
+2. Two coordinator replicas both run a trainer. Which line of SQL stops them both creating generation 7? What releases that lock if the pod holding it dies?
+3. Why is `hearts_training_latest_fitness` read from the database each tick instead of being set when a generation finishes?
+4. Why do all 8 candidates of a generation play the *same* hands (same seed), and why does the validation use a different seed?
 
 ---
 

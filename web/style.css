@@ -87,3 +87,24 @@ svg.spark polyline { fill: none; stroke: var(--accent); stroke-width: 2; vector-
 .bars .best-l { font-weight: 700; }
 .kv { display: flex; flex-wrap: wrap; gap: 4px 20px; }
 @media (max-width: 520px) { .deck { gap: 2px; } .card { min-height: 40px; } }
+/* training */
+code.strategy { display: block; flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap; padding: 6px 8px;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 6px; font-size: .85rem; }
+details summary { cursor: pointer; color: var(--muted); margin-bottom: 4px; }
+svg.chart { width: 100%; height: auto; display: block; }
+svg.chart text { fill: var(--muted); font-size: 11px; font-family: inherit; }
+svg.chart .grid { stroke: var(--border); stroke-width: 1; }
+svg.chart .axis { stroke: var(--muted); stroke-width: 1; }
+svg.chart .l-mean { fill: none; stroke: var(--accent); stroke-width: 2.5; }
+svg.chart .l-best { fill: none; stroke: var(--good); stroke-width: 2.5; }
+svg.chart .l-base { fill: none; stroke: var(--warn); stroke-width: 2; stroke-dasharray: 6 4; }
+svg.chart .pt-mean { fill: var(--accent); } svg.chart .pt-best { fill: var(--good); }
+.legend .sw { display: inline-block; width: 18px; height: 0; border-top: 3px solid var(--accent); margin-right: 6px; vertical-align: middle; }
+.legend .sw.best { border-top-color: var(--good); }
+.legend .sw.base { border-top: 3px dashed var(--warn); }
+.wbar { position: relative; width: 160px; height: 14px; background: var(--border); border-radius: 3px; }
+.wbar::after { content: ""; position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: var(--muted); }
+.wbar i { position: absolute; top: 0; bottom: 0; background: var(--accent); }
+.wbar i.neg { background: var(--c-cancelled); }
+td.hint { white-space: normal; min-width: 14em; color: var(--muted); font-size: .9rem; }
+.badge.validating { background: #2456c9; }
