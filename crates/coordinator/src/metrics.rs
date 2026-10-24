@@ -5,7 +5,7 @@
 //! job, unit or worker id: that would create unbounded time series.
 
 use prometheus::{
-    Encoder, Histogram, HistogramOpts, HistogramVec, IntCounter, IntCounterVec, IntGauge,
+    Encoder, Gauge, Histogram, HistogramOpts, HistogramVec, IntCounter, IntCounterVec, IntGauge,
     IntGaugeVec, Opts, Registry, TextEncoder,
 };
 
@@ -37,7 +37,18 @@ pub struct Metrics {
     pub advise_shard_errors: IntCounterVec,
     pub advise_partial: IntCounter,
     pub http_requests: IntCounterVec,
+    // Training (Level 1 learning)
+    pub training_runs_active: IntGauge,
+    pub training_generations: IntCounter,
+    pub training_generation_duration: Histogram,
+    pub training_latest_fitness: Gauge,
+    pub training_latest_best_fitness: Gauge,
 }
+
+/// Buckets for one training generation: 1 s .. 2 h.
+const GENERATION: &[f64] = &[
+    1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0, 1200.0, 3600.0, 7200.0,
+];
 
 impl Metrics {
     pub fn new() -> Metrics {
@@ -152,6 +163,36 @@ impl Metrics {
                 "HTTP requests",
                 &["route", "status"]
             )),
+            training_runs_active: reg!(
+                IntGauge::new(
+                    "hearts_training_runs_active",
+                    "Training runs in running/validating"
+                )
+                .expect("gauge")
+            ),
+            training_generations: reg!(counter(
+                "hearts_training_generations_total",
+                "Completed training generations"
+            )),
+            training_generation_duration: reg!(hist(
+                "hearts_training_generation_duration_seconds",
+                "Training generation: start to update",
+                GENERATION
+            )),
+            training_latest_fitness: reg!(
+                Gauge::new(
+                    "hearts_training_latest_fitness",
+                    "champion_fitness of the most recently completed generation"
+                )
+                .expect("gauge")
+            ),
+            training_latest_best_fitness: reg!(
+                Gauge::new(
+                    "hearts_training_latest_best_fitness",
+                    "best_fitness of the most recently completed generation"
+                )
+                .expect("gauge")
+            ),
             registry: registry.clone(),
         };
 

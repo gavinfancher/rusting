@@ -13,6 +13,7 @@
 //! * [`advisor_fanout`] splits `/api/advise` across worker pods and merges.
 //! * [`metrics`] defines every Prometheus metric from `docs/CONTRACTS.md`.
 //! * [`background`] is the periodic sweeper / gauge refresher.
+//! * [`trainer`] drives cross-entropy-method training runs (Level 1 learning).
 
 pub mod advisor_fanout;
 pub mod background;
@@ -23,3 +24,4 @@ pub mod http;
 pub mod metrics;
 pub mod model;
 pub mod state;
+pub mod trainer;

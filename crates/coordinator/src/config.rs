@@ -39,6 +39,9 @@ pub struct Config {
     pub advisor_default_deadline_ms: u32,
     #[arg(long, env = "STATS_POLL_SECONDS", default_value_t = 5)]
     pub stats_poll_seconds: u64,
+    /// How often the trainer looks at running training runs (milliseconds).
+    #[arg(long, env = "TRAINER_TICK_MS", default_value_t = 2000)]
+    pub trainer_tick_ms: u64,
     #[arg(long, env = "LOG_FORMAT", value_enum, default_value = "json")]
     pub log_format: LogFormat,
 }

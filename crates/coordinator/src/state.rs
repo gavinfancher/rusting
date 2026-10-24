@@ -4,7 +4,13 @@
 //! because axum clones the state once per request. Note what is *not* here:
 //! no job or lease bookkeeping. All of that lives in Postgres.
 
-use crate::{advisor_fanout::Fanout, config::Config, db::Db, metrics::Metrics};
+use crate::{
+    advisor_fanout::Fanout,
+    config::Config,
+    db::Db,
+    metrics::Metrics,
+    trainer::{Cem, CoreCem},
+};
 use std::sync::Arc;
 use tokio::sync::watch;
 
@@ -17,6 +23,9 @@ pub struct AppState {
     /// Flips to `true` when the process is shutting down. Long-lived
     /// responses (SSE) watch it so graceful shutdown doesn't wait on them.
     pub shutdown: watch::Receiver<bool>,
+    /// The learning algorithm (CEM). Production uses `hearts_core::learn`;
+    /// tests swap in a fake with [`AppState::with_cem`].
+    pub cem: Arc<dyn Cem>,
 }
 
 /// Resolve once the shutdown flag is `true` (or its sender is gone).
@@ -45,6 +54,13 @@ impl AppState {
             config,
             fanout,
             shutdown,
+            cem: Arc::new(CoreCem),
         }
+    }
+
+    /// Replace the learning algorithm (used by tests).
+    pub fn with_cem(mut self, cem: Arc<dyn Cem>) -> AppState {
+        self.cem = cem;
+        self
     }
 }

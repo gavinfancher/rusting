@@ -2,7 +2,7 @@
 //! the REST API (shapes fixed by `docs/CONTRACTS.md`).
 
 use chrono::{DateTime, Utc};
-use hearts_core::JobSpec;
+use hearts_core::{FEATURE_NAMES, JobSpec, Rules, Weights, learn::Init};
 use serde::{Deserialize, Serialize};
 
 /// The `spec` object inside a Job: `{seed, strategies, rules}`. This is just
@@ -53,6 +53,9 @@ pub struct Job {
     pub standings: Vec<Standing>,
     pub elapsed_ms: Option<i64>,
     pub hands_per_sec: Option<f64>,
+    /// Set on tournament jobs created by the trainer (hidden from the
+    /// default jobs list).
+    pub training_run_id: Option<i64>,
 }
 
 impl Job {
@@ -130,4 +133,113 @@ pub struct NewBenchmark {
     pub wall_ms: Option<i64>,
     pub hands_per_sec: Option<f64>,
     pub notes: Option<String>,
+}
+
+// ---------------------------------------------------------------------------
+// Training (Level 1 learning). JSON shapes are fixed by CONTRACTS.md.
+// ---------------------------------------------------------------------------
+
+/// The stored `training_runs.config`: the `POST /api/training` body with every
+/// default filled in. Serialized into Postgres as JSONB and echoed back in the
+/// API, so the run is fully reproducible from this plus `seed`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct TrainingConfig {
+    pub name: Option<String>,
+    pub population: usize,
+    pub elites: usize,
+    pub generations: u32,
+    pub hands_per_candidate: i64,
+    pub unit_size: i64,
+    /// Canonical strategy strings (already `champion:N`-resolved).
+    pub opponents: Vec<String>,
+    pub init: Init,
+    pub sigma0: f64,
+    pub smoothing: f64,
+    pub min_sigma: f64,
+    pub seed: u64,
+    pub validation_hands: i64,
+    pub rules: Rules,
+}
+
+/// Progress of the generation currently being evaluated.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct CurrentGeneration {
+    pub generation: i32,
+    pub candidates_total: i64,
+    pub candidates_done: i64,
+    pub hands_done: i64,
+    pub hands_total: i64,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct FeatureWeight {
+    pub feature: &'static str,
+    pub weight: i32,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct Champion {
+    /// `linear:w0,...,w23`, usable directly as a strategy in `POST /api/jobs`.
+    pub strategy: String,
+    /// `null` if the measuring job failed (JSON can't carry infinity).
+    pub fitness: Option<f64>,
+    pub weights: Vec<FeatureWeight>,
+}
+
+impl Champion {
+    pub fn new(w: Weights, fitness: Option<f64>) -> Champion {
+        Champion {
+            strategy: hearts_core::StrategyKind::Linear(w).to_string(),
+            fitness,
+            weights: FEATURE_NAMES
+                .iter()
+                .zip(w.0)
+                .map(|(feature, weight)| FeatureWeight { feature, weight })
+                .collect(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct GenerationStats {
+    pub generation: i32,
+    pub seed: u64,
+    pub mean_fitness: Option<f64>,
+    pub best_fitness: Option<f64>,
+    pub elite_mean_fitness: Option<f64>,
+    pub population_mean_fitness: Option<f64>,
+    pub sigma_mean: Option<f64>,
+    pub started_at: DateTime<Utc>,
+    pub finished_at: Option<DateTime<Utc>>,
+    pub elapsed_ms: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct Validation {
+    pub hands: i64,
+    pub champion_fitness: Option<f64>,
+    pub baseline_fitness: Option<f64>,
+    pub champion_job_id: i64,
+    pub baseline_job_id: i64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TrainingRun {
+    pub id: i64,
+    pub name: Option<String>,
+    /// running | validating | done | cancelled | failed
+    pub status: String,
+    pub config: TrainingConfig,
+    pub seed: i64,
+    pub generation: i32,
+    pub generations_total: i32,
+    pub current: Option<CurrentGeneration>,
+    pub champion: Option<Champion>,
+    /// Omitted from the list endpoint, present on `GET /api/training/:id`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub generations: Option<Vec<GenerationStats>>,
+    pub validation: Option<Validation>,
+    pub created_at: DateTime<Utc>,
+    pub finished_at: Option<DateTime<Utc>>,
+    pub last_error: Option<String>,
 }
