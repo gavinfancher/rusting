@@ -58,8 +58,8 @@ Layout:
 ```
 make status                       # pods Running/Ready, spread over k8s-w1..w3
 kubectl -n hearts get ingress,svc,pvc
-curl http://hearts.k8s.ad.gavinf.com/healthz
-curl http://hearts.k8s.ad.gavinf.com/api/workers   # should list 3 active workers
+curl https://hearts.k8s.ad.gavinf.com/healthz
+curl https://hearts.k8s.ad.gavinf.com/api/workers   # should list 3 active workers
 make logs-coordinator
 ```
 In Grafana, open "Hearts Overview": active workers should be 3. In Prometheus (Status, Targets) the
@@ -83,4 +83,4 @@ automatically: https://hearts.k8s.ad.gavinf.com and https://grafana.k8s.ad.gavin
 
 - The coordinator runs migrations at startup, so it uses `strategy: Recreate` with a single replica.
 - Workers have requests == limits (Guaranteed QoS) so benchmark numbers are repeatable.
-- Alert runbook links point to `docs/RUNBOOK.md`, which another workstream is expected to write.
+- Alert runbook links point to `docs/RUNBOOK.md`. Failure drills are in `docs/GAMEDAYS.md` and scaling experiments in `docs/EXPERIMENTS.md`.

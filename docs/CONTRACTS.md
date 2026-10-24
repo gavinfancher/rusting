@@ -42,6 +42,7 @@ All binaries use `clap` with `env` support, so each flag can also be set as an e
 - `WORKER_THREADS=0`: size of the rayon pool; 0 means `std::thread::available_parallelism()`, which respects the cgroup CPU limit in k8s
 - `MAX_UNITS_PER_LEASE=1`
 - `HEARTBEAT_SECONDS=10`
+- `SHUTDOWN_GRACE_SECONDS=45`: on SIGTERM, how long to let the in-flight unit finish before abandoning it (keep it below the pod's `terminationGracePeriodSeconds: 60`)
 - `PREFETCH=false`: lease the next unit while computing the current one
 - `GRPC_ADDR=0.0.0.0:50052`, `METRICS_ADDR=0.0.0.0:9090`
 - `POD_NAME` / `NODE_NAME`: from the k8s downward API; default to the hostname and `"local"`. `worker_id = POD_NAME`.

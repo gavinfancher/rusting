@@ -43,6 +43,8 @@ data:
   COORDINATOR_GRPC_URL: "http://hearts-coordinator.hearts.svc.cluster.local:50051"
   MAX_UNITS_PER_LEASE: "1"
   HEARTBEAT_SECONDS: "10"
+  # Must stay below terminationGracePeriodSeconds (60) in worker.yaml.
+  SHUTDOWN_GRACE_SECONDS: "45"
   PREFETCH: "false"
   GRPC_ADDR: "0.0.0.0:50052"
   METRICS_ADDR: "0.0.0.0:9090"
