@@ -1,0 +1,54 @@
+<!doctype html>
+<!-- Advisor page: card picker, parameters, and expected-points results. Logic lives in app.js (page "advisor"). -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Hearts Advisor</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="style.css">
+</head>
+<body data-page="advisor">
+<header class="top"><strong>Hearts</strong><nav id="nav" aria-label="Main"></nav></header>
+<main>
+  <h1>Advisor</h1>
+  <section class="panel" aria-label="Card picker">
+    <fieldset class="modes" style="border:0;padding:0;margin:0 0 8px">
+      <legend class="muted">Selecting cards for</legend>
+      <label><input type="radio" name="mode" value="hand" checked> My hand (max 13)</label>
+      <label><input type="radio" name="mode" value="trick"> Current trick (max 3, in order)</label>
+      <label><input type="radio" name="mode" value="played"> Already played</label>
+    </fieldset>
+    <div class="deck" id="deck"></div>
+    <p class="muted" id="summary" aria-live="polite"></p>
+    <div class="row" style="display:flex;gap:8px;flex-wrap:wrap">
+      <button type="button" id="random">Random deal</button>
+      <button type="button" id="clear">Clear all</button>
+    </div>
+  </section>
+
+  <form class="panel" id="advise">
+    <div class="row">
+      <label>My seat <select id="a-seat"><option>0</option><option>1</option><option>2</option><option>3</option></select></label>
+      <label>Trick leader seat <select id="a-leader"><option>0</option><option>1</option><option>2</option><option>3</option></select></label>
+      <label style="flex-direction:row;align-items:center;gap:6px;color:var(--text)"><input type="checkbox" id="a-broken"> Hearts broken</label>
+      <label>Deadline (ms) <input type="number" id="a-deadline" min="1" max="60000" value="2000"></label>
+    </div>
+    <div class="row"><label style="flex:1">Samples: <b id="a-samples-v">2000</b>
+      <input type="range" id="a-samples" min="100" max="50000" step="100" value="2000"></label></div>
+    <button type="submit" class="primary" id="a-go">Ask advisor</button>
+  </form>
+
+  <section class="panel" id="result" aria-live="polite" hidden>
+    <h2 style="margin-top:0">Expected points per card (lower is better)</h2>
+    <div id="r-alert"></div>
+    <div class="bars" id="r-bars"></div>
+    <p class="kv muted" id="r-stats"></p>
+  </section>
+</main>
+<div id="toasts" role="status" aria-live="polite"></div>
+<script src="mock.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,64 @@
+<!doctype html>
+<!-- Tournaments page: launch form, job list, and live job detail (?id=N). Logic lives in app.js (page "tournament"). -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Hearts Tournaments</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="style.css">
+</head>
+<body data-page="tournament">
+<header class="top"><strong>Hearts</strong><nav id="nav" aria-label="Main"></nav></header>
+<main>
+  <h1>Tournaments</h1>
+  <section id="detail" hidden aria-label="Job detail" aria-live="off">
+    <div class="panel">
+      <div class="kv"><h2 id="d-title" style="margin:0">Job</h2><span id="d-status"></span>
+        <button type="button" class="danger" id="d-cancel">Cancel job</button></div>
+      <p class="muted" id="d-sub"></p>
+      <div class="progress" role="progressbar" aria-label="Hands completed" id="d-progress" aria-valuemin="0" aria-valuemax="100"><span id="d-progress-fill"></span></div>
+      <p id="d-progress-text"></p>
+      <h2>Units</h2>
+      <div class="stack" id="d-stack" role="img" aria-label="Unit states"></div>
+      <div class="legend" id="d-legend"></div>
+      <p id="d-reclaims"></p>
+      <div class="kv"><span>Elapsed: <b id="d-elapsed">-</b></span><span>Throughput: <b id="d-hps">-</b></span></div>
+      <svg class="spark" id="d-spark" viewBox="0 0 240 50" preserveAspectRatio="none" role="img" aria-label="Hands per second, last 60 samples"></svg>
+    </div>
+    <div class="panel tablewrap">
+      <table>
+        <caption class="muted" style="text-align:left">Standings (best average first)</caption>
+        <thead><tr><th>Slot</th><th>Strategy</th><th class="num">Avg points/hand</th><th class="num">Win %</th><th class="num">Moons</th><th class="num">Q&#9824; taken</th><th class="num">Hands</th></tr></thead>
+        <tbody id="d-standings"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <h2>Launch a tournament</h2>
+  <form class="panel" id="launch">
+    <div class="row" id="slots"></div>
+    <div class="row">
+      <label>Hands <input type="number" id="f-hands" min="1" max="1000000000" value="100000" required></label>
+      <label>Unit size <input type="number" id="f-unit" min="1" max="1000000" value="2000" required></label>
+      <label>Seed (optional) <input type="number" id="f-seed" min="0" max="9007199254740991" placeholder="random"></label>
+      <label>Name <input type="text" id="f-name" placeholder="optional"></label>
+      <label style="flex-direction:row;align-items:center;gap:6px;color:var(--text)"><input type="checkbox" id="f-rule" checked> No points on first trick</label>
+    </div>
+    <button type="submit" class="primary">Start tournament</button>
+  </form>
+
+  <h2>Jobs</h2>
+  <div class="panel tablewrap">
+    <table>
+      <thead><tr><th>ID</th><th>Name</th><th>Status</th><th>Strategies</th><th class="num">Progress</th></tr></thead>
+      <tbody id="jobs"></tbody>
+    </table>
+  </div>
+</main>
+<div id="toasts" role="status" aria-live="polite"></div>
+<script src="mock.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
