@@ -1,0 +1,51 @@
+# ConfigMaps: non-secret key/value settings. The Deployments load these as
+# environment variables via `envFrom`. Both binaries read env vars (clap `env`),
+# so editing a value here and restarting the pods
+# (`kubectl -n hearts rollout restart deploy/hearts-coordinator`) changes
+# behaviour without rebuilding an image. Keys mirror docs/CONTRACTS.md.
+# Note: pods do NOT restart automatically when a ConfigMap changes.
+#
+# Two maps because both binaries have a GRPC_ADDR with different values.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hearts-coordinator-config
+  namespace: hearts
+  labels:
+    app.kubernetes.io/name: hearts-coordinator
+    app.kubernetes.io/part-of: hearts
+data:
+  RUST_LOG: "info"
+  LOG_FORMAT: "json"
+  DB_POOL_SIZE: "16"
+  HTTP_ADDR: "0.0.0.0:8080"
+  GRPC_ADDR: "0.0.0.0:50051"
+  LEASE_SECONDS: "30"
+  MAX_ATTEMPTS: "3"
+  NO_WORK_RETRY_MS: "1000"
+  # Headless Service: DNS returns one A record per ready worker pod -> advisor fan-out.
+  ADVISOR_SHARD_DNS: "hearts-worker-headless.hearts.svc.cluster.local:50052"
+  ADVISOR_DEFAULT_DEADLINE_MS: "2000"
+  STATS_POLL_SECONDS: "5"
+---
+# WORKER_THREADS is deliberately absent: unset = follow the pod's CPU limit.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hearts-worker-config
+  namespace: hearts
+  labels:
+    app.kubernetes.io/name: hearts-worker
+    app.kubernetes.io/part-of: hearts
+data:
+  RUST_LOG: "info"
+  LOG_FORMAT: "json"
+  COORDINATOR_GRPC_URL: "http://hearts-coordinator.hearts.svc.cluster.local:50051"
+  MAX_UNITS_PER_LEASE: "1"
+  HEARTBEAT_SECONDS: "10"
+  PREFETCH: "false"
+  GRPC_ADDR: "0.0.0.0:50052"
+  METRICS_ADDR: "0.0.0.0:9090"
+  # Game-day fault injection (0 = off). See docs/RUNBOOK.md.
+  FAULT_PANIC_EVERY_N: "0"
+  FAULT_SLOW_MS: "0"

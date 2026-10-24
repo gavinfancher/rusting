@@ -1,0 +1,64 @@
+# Helm values for the kube-prometheus-stack chart (Prometheus Operator, Prometheus,
+# Alertmanager, Grafana, node-exporter, kube-state-metrics).
+# Install:  make monitoring
+#
+# Before installing, create the Grafana admin password Secret:
+#   kubectl create namespace monitoring
+#   kubectl -n monitoring create secret generic grafana-admin \
+#     --from-literal=admin-user=admin --from-literal=admin-password='<choose one>'
+#
+# Concepts: Helm = a package manager that renders templates with these values;
+# a PVC (volumeClaimTemplate) gives Prometheus persistent storage; Ingress exposes Grafana.
+
+# --- k3s fixes ------------------------------------------------------------------
+# k3s runs the control-plane components inside a single process and does not expose
+# etcd / controller-manager / scheduler / kube-proxy metrics on the ports the chart
+# expects, so scraping them would only produce permanently-red targets and noisy alerts.
+kubeEtcd:
+  enabled: false
+kubeControllerManager:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeProxy:
+  enabled: false
+
+prometheus:
+  prometheusSpec:
+    retention: 15d
+    # By default the operator only selects monitors/rules labelled with this Helm release.
+    # `false` = "select everything in every namespace", so our hearts ServiceMonitors and
+    # PrometheusRule are picked up regardless of labels.
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+    probeSelectorNilUsesHelmValues: false
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: local-path
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 20Gi
+
+grafana:
+  admin:
+    existingSecret: grafana-admin
+    userKey: admin-user
+    passwordKey: admin-password
+  ingress:
+    enabled: true
+    ingressClassName: traefik
+    hosts:
+      - grafana.k8s.ad.gavinf.com
+    path: /
+  # The sidecar watches ConfigMaps (in ALL namespaces) labelled grafana_dashboard=1
+  # and loads their JSON as dashboards. Our dashboards live in deploy/monitoring/dashboards.
+  sidecar:
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+      labelValue: "1"
+      searchNamespace: ALL
+  defaultDashboardsTimezone: browser

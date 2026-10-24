@@ -1,0 +1,29 @@
+# Ingress: routes outside HTTP traffic (via the Traefik ingress controller that runs
+# in the cluster) to a Service by hostname. The wildcard DNS record
+# *.k8s.ad.gavinf.com already points at the cluster, so no DNS work is needed.
+# Plain HTTP on purpose (matches the other apps). To add TLS later, add:
+#   metadata.annotations: {cert-manager.io/cluster-issuer: letsencrypt-prod}
+#   spec.tls: [{hosts: [hearts.k8s.ad.gavinf.com], secretName: hearts-tls}]
+# (cert-manager then obtains the certificate and stores it in that Secret.)
+# SSE (/api/jobs/:id/events) works through Traefik without extra config.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hearts
+  namespace: hearts
+  labels:
+    app.kubernetes.io/name: hearts
+    app.kubernetes.io/part-of: hearts
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: hearts.k8s.ad.gavinf.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: hearts-coordinator
+                port:
+                  name: http

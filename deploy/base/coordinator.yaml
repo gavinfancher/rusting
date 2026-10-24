@@ -1,0 +1,89 @@
+# Coordinator: the brain. Serves the web UI/REST API (:8080), hands work units to
+# workers over gRPC (:50051), and talks to Postgres.
+#
+# Concepts:
+#  - Deployment: keeps N identical pods running and does rolling updates.
+#  - strategy Recreate: stop the old pod BEFORE starting the new one. With a single
+#    replica that runs schema migrations at startup, we never want two versions
+#    alive at once. (Later, with several coordinators, switch to RollingUpdate.)
+#  - envFrom/env: environment from the ConfigMap, plus DATABASE_URL assembled from
+#    Secret values using $(VAR) expansion (variables must be defined earlier in `env`).
+#  - Probes: /healthz (liveness) = process is up, restart if not;
+#    /readyz (readiness) = DB reachable, otherwise the Service stops sending traffic.
+#  - resources: `requests` is what the scheduler reserves; `limits` is the hard cap
+#    (CPU is throttled, memory over the limit gets OOM-killed).
+#  - Service: stable name `hearts-coordinator`. appProtocol h2c tells Traefik/meshes
+#    the gRPC port speaks cleartext HTTP/2.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hearts-coordinator
+  namespace: hearts
+  labels:
+    app.kubernetes.io/name: hearts-coordinator
+    app.kubernetes.io/part-of: hearts
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: hearts-coordinator
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: hearts-coordinator
+        app.kubernetes.io/part-of: hearts
+    spec:
+      containers:
+        - name: coordinator
+          image: ghcr.io/gavinfancher/hearts-coordinator:main # replaced by the overlay's `images:`
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: grpc
+              containerPort: 50051
+          envFrom:
+            - configMapRef:
+                name: hearts-coordinator-config
+          env:
+            - name: POSTGRES_USER
+              valueFrom: {secretKeyRef: {name: hearts-db, key: POSTGRES_USER}}
+            - name: POSTGRES_PASSWORD
+              valueFrom: {secretKeyRef: {name: hearts-db, key: POSTGRES_PASSWORD}}
+            - name: POSTGRES_DB
+              valueFrom: {secretKeyRef: {name: hearts-db, key: POSTGRES_DB}}
+            - name: DATABASE_URL
+              value: "postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@hearts-db.hearts.svc.cluster.local:5432/$(POSTGRES_DB)"
+          readinessProbe:
+            httpGet: {path: /readyz, port: http}
+            periodSeconds: 5
+            timeoutSeconds: 2
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests: {cpu: 500m, memory: 512Mi}
+            limits: {cpu: "2", memory: 1Gi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hearts-coordinator
+  namespace: hearts
+  labels:
+    app.kubernetes.io/name: hearts-coordinator
+    app.kubernetes.io/part-of: hearts
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: hearts-coordinator
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+    - name: grpc
+      port: 50051
+      targetPort: grpc
+      appProtocol: kubernetes.io/h2c
