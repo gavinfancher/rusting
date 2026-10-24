@@ -6,5 +6,31 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
+anyhow.workspace = true
+axum = "0.8.9"
+chrono = { version = "0.4.45", features = ["serde"] }
+clap = { version = "4.6.7", features = ["derive", "env"] }
+futures-util = "0.3.34"
 hearts-core = { workspace = true }
 hearts-proto = { workspace = true }
+mime_guess = "2.0.5"
+prometheus = { version = "0.14.0", features = ["process"] }
+prost.workspace = true
+rand = "0.10.3"
+rust-embed = "8.13.0"
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio", "postgres", "migrate", "chrono", "json", "macros"] }
+thiserror.workspace = true
+tokio = { workspace = true, features = ["full"] }
+tokio-stream = { version = "0.1.19", features = ["net"] }
+tonic.workspace = true
+tower-http = { version = "0.7.1", features = ["cors", "trace"] }
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[dev-dependencies]
+http-body-util = "0.1.5"
+testcontainers = "0.27"
+testcontainers-modules = { version = "0.15.0", features = ["postgres"] }
+tower = "0.5.3"
