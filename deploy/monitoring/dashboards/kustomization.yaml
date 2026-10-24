@@ -1,0 +1,23 @@
+# Grafana dashboards as ConfigMaps. Kustomize's configMapGenerator wraps each JSON file
+# in a ConfigMap; the label `grafana_dashboard: "1"` is what the Grafana sidecar (see
+# ../kube-prometheus-stack-values.yaml) watches for, so dashboards load with no restart.
+# disableNameSuffixHash keeps stable names so re-applying updates the same ConfigMap.
+# Apply with `make monitoring` (or `kubectl apply -k deploy/monitoring/dashboards`).
+# The JSON files are the source of truth; edit in Grafana, export JSON, and paste back here.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: monitoring
+generatorOptions:
+  disableNameSuffixHash: true
+  labels:
+    grafana_dashboard: "1"
+    app.kubernetes.io/part-of: hearts
+configMapGenerator:
+  - name: hearts-dashboard-overview
+    files: [hearts-overview.json]
+  - name: hearts-dashboard-workers
+    files: [hearts-workers.json]
+  - name: hearts-dashboard-advisor
+    files: [hearts-advisor.json]
+  - name: hearts-dashboard-postgres
+    files: [hearts-postgres.json]

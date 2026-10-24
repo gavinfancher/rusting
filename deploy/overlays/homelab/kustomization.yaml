@@ -1,0 +1,41 @@
+# Homelab overlay: the base plus environment-specific choices.
+# Apply with `make deploy` (kubectl apply -k deploy/overlays/homelab).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: hearts
+resources:
+  - ../../base
+
+# The ONE place the image owner/tag is set (the Makefile has a matching OWNER variable
+# for `make image`/`make push`). Edit newTag (e.g. sha-abc1234) to roll out a specific build.
+images:
+  - name: ghcr.io/gavinfancher/hearts-coordinator
+    newName: ghcr.io/gavinfancher/hearts-coordinator
+    newTag: main
+  - name: ghcr.io/gavinfancher/hearts-worker
+    newName: ghcr.io/gavinfancher/hearts-worker
+    newTag: main
+
+# Secret generated from a git-ignored env file (copy db.env.example -> db.env).
+# Kustomize appends a content hash to the name and rewrites references to it, so
+# changing the password rolls the pods automatically.
+secretGenerator:
+  - name: hearts-db
+    envs:
+      - db.env
+
+# --- The knobs you'll turn in experiments --------------------------------------
+# Uncomment/edit, then `make deploy`. (Or imperatively: `make scale-workers N=5`.)
+#
+# patches:
+#   - target: {kind: Deployment, name: hearts-worker}
+#     patch: |-
+#       - op: replace
+#         path: /spec/replicas
+#         value: 6
+#       # Per-worker size. Keep requests == limits for Guaranteed QoS.
+#       - op: replace
+#         path: /spec/template/spec/containers/0/resources
+#         value:
+#           requests: {cpu: "4", memory: 2Gi}
+#           limits: {cpu: "4", memory: 2Gi}

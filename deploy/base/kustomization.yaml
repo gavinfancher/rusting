@@ -1,0 +1,14 @@
+# Kustomize base: the list of manifests that make up Hearts. Overlays (e.g.
+# ../overlays/homelab) include this directory and patch images, replicas, secrets.
+# Render without applying:  kubectl kustomize deploy/overlays/homelab
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - postgres.yaml
+  - coordinator.yaml
+  - worker.yaml
+  - ingress.yaml
+  - monitoring.yaml
+  - prometheus-rules.yaml

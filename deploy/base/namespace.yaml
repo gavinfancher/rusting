@@ -1,0 +1,10 @@
+# Namespace: a named partition of the cluster. Almost every other object we
+# create lives inside it (metadata.namespace), and deleting the namespace
+# deletes everything in it. Services are DNS-resolvable cluster-wide as
+# <service>.<namespace>.svc.cluster.local.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: hearts
+  labels:
+    app.kubernetes.io/part-of: hearts

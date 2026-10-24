@@ -1,0 +1,60 @@
+# Local end-to-end stack: Postgres + coordinator + 2 workers.
+#   docker compose up --build        (or: make dev)
+# UI: http://localhost:8080
+name: hearts
+
+services:
+  postgres:
+    image: postgres:18.4
+    environment:
+      POSTGRES_USER: hearts
+      POSTGRES_PASSWORD: hearts
+      POSTGRES_DB: hearts
+    volumes:
+      # Postgres 18 images keep data in a versioned subdirectory under /var/lib/postgresql.
+      - pgdata:/var/lib/postgresql
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hearts -d hearts"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  coordinator:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      target: coordinator
+    image: hearts-coordinator:dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://hearts:hearts@postgres:5432/hearts
+      LOG_FORMAT: pretty
+      RUST_LOG: info
+      # Compose DNS returns one A record per worker replica; the advisor fans out to each.
+      ADVISOR_SHARD_DNS: worker:50052
+    ports:
+      - "8080:8080"
+      - "50051:50051"
+
+  worker:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      target: worker
+    image: hearts-worker:dev
+    depends_on:
+      - coordinator
+    environment:
+      COORDINATOR_GRPC_URL: http://coordinator:50051
+      WORKER_THREADS: "2"
+      LOG_FORMAT: pretty
+      RUST_LOG: info
+    deploy:
+      replicas: 2
+
+volumes:
+  pgdata:

@@ -1,0 +1,122 @@
+# Worker: the compute fleet. Each pod leases work units from the coordinator,
+# simulates hands on a rayon thread pool, and also serves advisor shards (:50052).
+#
+# Concepts:
+#  - requests == limits (cpu 2 / memory 1Gi) => QoS class "Guaranteed". The pod gets
+#    exactly 2 cores reserved (never shared/overcommitted), so benchmark numbers are
+#    repeatable and the kubelet evicts these pods last under node pressure.
+#    The worker sizes its thread pool from the cgroup CPU limit (WORKER_THREADS unset).
+#  - topologySpreadConstraints: ask the scheduler to spread pods across nodes
+#    (maxSkew 1 per kubernetes.io/hostname). ScheduleAnyway = a preference, not a rule.
+#  - Downward API: `fieldRef` injects pod metadata (name, node) as env vars.
+#  - terminationGracePeriodSeconds: after SIGTERM the pod has 60s to finish its
+#    current unit and stop leasing before SIGKILL.
+#  - Headless Service (clusterIP: None): no virtual IP; DNS returns every ready pod IP
+#    so the coordinator can fan advisor requests out to all workers.
+#    publishNotReadyAddresses=false keeps unready pods out of that list.
+#  - PodDisruptionBudget: during voluntary disruptions (node drain) at most 1 worker
+#    may be down at a time.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hearts-worker
+  namespace: hearts
+  labels:
+    app.kubernetes.io/name: hearts-worker
+    app.kubernetes.io/part-of: hearts
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: hearts-worker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: hearts-worker
+        app.kubernetes.io/part-of: hearts
+    spec:
+      terminationGracePeriodSeconds: 60
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: hearts-worker
+      containers:
+        - name: worker
+          image: ghcr.io/gavinfancher/hearts-worker:main # replaced by the overlay's `images:`
+          ports:
+            - name: grpc
+              containerPort: 50052
+            - name: metrics
+              containerPort: 9090
+          envFrom:
+            - configMapRef:
+                name: hearts-worker-config
+          env:
+            - name: POD_NAME
+              valueFrom: {fieldRef: {fieldPath: metadata.name}}
+            - name: NODE_NAME
+              valueFrom: {fieldRef: {fieldPath: spec.nodeName}}
+          readinessProbe:
+            httpGet: {path: /readyz, port: metrics}
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: {path: /healthz, port: metrics}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests: {cpu: "2", memory: 1Gi}
+            limits: {cpu: "2", memory: 1Gi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hearts-worker-headless
+  namespace: hearts
+  labels:
+    app.kubernetes.io/name: hearts-worker
+    app.kubernetes.io/part-of: hearts
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: false
+  selector:
+    app.kubernetes.io/name: hearts-worker
+  ports:
+    - name: grpc
+      port: 50052
+      targetPort: grpc
+      appProtocol: kubernetes.io/h2c
+---
+# Normal Service used only so a ServiceMonitor can find the metrics port.
+apiVersion: v1
+kind: Service
+metadata:
+  name: hearts-worker-metrics
+  namespace: hearts
+  labels:
+    app.kubernetes.io/name: hearts-worker
+    app.kubernetes.io/component: metrics
+    app.kubernetes.io/part-of: hearts
+spec:
+  selector:
+    app.kubernetes.io/name: hearts-worker
+  ports:
+    - name: metrics
+      port: 9090
+      targetPort: metrics
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: hearts-worker
+  namespace: hearts
+  labels:
+    app.kubernetes.io/name: hearts-worker
+    app.kubernetes.io/part-of: hearts
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: hearts-worker

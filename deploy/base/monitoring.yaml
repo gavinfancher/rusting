@@ -1,0 +1,58 @@
+# ServiceMonitors: CRDs from the Prometheus Operator (installed by kube-prometheus-stack).
+# Each one says "scrape the pods behind Services matching this label selector, on
+# this named port, every 15s". The `release: kube-prometheus-stack` label matches the
+# Helm release name (our values file also disables the selector requirement).
+# Prometheus adds namespace/pod/service labels to every series from the target,
+# which is how dashboards get per-pod views without high-cardinality app labels.
+# Requires the monitoring stack's CRDs to exist BEFORE `make deploy` (run `make monitoring` first).
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: hearts-coordinator
+  namespace: hearts
+  labels:
+    release: kube-prometheus-stack
+    app.kubernetes.io/part-of: hearts
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: hearts-coordinator
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: hearts-worker
+  namespace: hearts
+  labels:
+    release: kube-prometheus-stack
+    app.kubernetes.io/part-of: hearts
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: hearts-worker
+      app.kubernetes.io/component: metrics
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 15s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: hearts-db
+  namespace: hearts
+  labels:
+    release: kube-prometheus-stack
+    app.kubernetes.io/part-of: hearts
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: hearts-db
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 15s

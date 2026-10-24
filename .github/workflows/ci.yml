@@ -1,0 +1,64 @@
+# CI: lint + test on every push/PR; build and push container images on main.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install protoc (needed by crates/hearts-proto/build.rs)
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      # Docker is preinstalled on GitHub runners, so testcontainers (Postgres) works.
+      - run: cargo test --workspace
+
+  images:
+    needs: check
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write # lets GITHUB_TOKEN push to ghcr.io
+    # To add arm64 later (e.g. EC2 Graviton): build each arch natively with a matrix
+    #   matrix: { include: [{arch: amd64, runner: ubuntu-24.04}, {arch: arm64, runner: ubuntu-24.04-arm}] }
+    # using `platforms: linux/${{ matrix.arch }}`, push by digest, then merge with
+    # `docker buildx imagetools create` into one multi-arch tag. Avoid QEMU: it is very slow for Rust.
+    strategy:
+      matrix:
+        target: [coordinator, worker]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Short SHA
+        id: sha
+        run: echo "short=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          target: ${{ matrix.target }}
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/hearts-${{ matrix.target }}:sha-${{ steps.sha.outputs.short }}
+            ghcr.io/${{ github.repository_owner }}/hearts-${{ matrix.target }}:main
+          cache-from: type=gha,scope=${{ matrix.target }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.target }}

@@ -1,0 +1,96 @@
+# PrometheusRule: alerting rules, another Prometheus Operator CRD. The operator loads
+# them into Prometheus; firing alerts show in Prometheus/Alertmanager/Grafana.
+# Each alert: `expr` is a PromQL query that is non-empty when something is wrong;
+# `for` means it must stay true that long before firing (avoids flapping);
+# annotations are human text with a link to the runbook.
+# Metrics from other components used here: `up` (Prometheus), `pg_up`
+# (postgres-exporter), `kube_pod_container_status_restarts_total` (kube-state-metrics),
+# `container_cpu_cfs_*` (cAdvisor, built into the kubelet).
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: hearts-alerts
+  namespace: hearts
+  labels:
+    release: kube-prometheus-stack
+    app.kubernetes.io/part-of: hearts
+spec:
+  groups:
+    - name: hearts.rules
+      rules:
+        - alert: HeartsCoordinatorDown
+          expr: sum(up{namespace="hearts", service="hearts-coordinator"}) == 0 or absent(up{namespace="hearts", service="hearts-coordinator"})
+          for: 1m
+          labels: {severity: critical}
+          annotations:
+            summary: Hearts coordinator is down
+            description: The coordinator metrics target has been down or missing for 1 minute; no work is being handed out.
+            runbook_url: https://github.com/gavinfancher/rusting/blob/main/docs/RUNBOOK.md#heartscoordinatordown
+        - alert: HeartsWorkersDown
+          expr: hearts_workers_active == 0 and on() sum(hearts_units{state="pending"}) > 0
+          for: 2m
+          labels: {severity: critical}
+          annotations:
+            summary: No active Hearts workers while work is pending
+            description: There are pending work units but no worker has been seen for 2 minutes.
+            runbook_url: https://github.com/gavinfancher/rusting/blob/main/docs/RUNBOOK.md#heartsworkersdown
+        - alert: HeartsJobStalled
+          expr: sum(hearts_units{state=~"pending|leased"}) > 0 and on() sum(rate(hearts_units_completed_total[5m])) == 0
+          for: 5m
+          labels: {severity: warning}
+          annotations:
+            summary: Hearts jobs are stalled
+            description: Units are pending or leased but none have completed in 5 minutes.
+            runbook_url: https://github.com/gavinfancher/rusting/blob/main/docs/RUNBOOK.md#heartsjobstalled
+        - alert: HeartsHighReclaimRate
+          expr: sum(increase(hearts_units_reclaimed_total[10m])) / sum(increase(hearts_units_leased_total[10m])) > 0.1
+          for: 0m
+          labels: {severity: warning}
+          annotations:
+            summary: More than 10% of leased units are reclaims
+            description: Over the last 10 minutes leases are expiring often (workers dying, too slow, or LEASE_SECONDS too short).
+            runbook_url: https://github.com/gavinfancher/rusting/blob/main/docs/RUNBOOK.md#heartshighreclaimrate
+        - alert: HeartsUnitsFailed
+          expr: sum(increase(hearts_units_failed_total[10m])) > 0
+          for: 0m
+          labels: {severity: warning}
+          annotations:
+            summary: Work units have permanently failed
+            description: At least one unit exhausted MAX_ATTEMPTS in the last 10 minutes (poison unit?).
+            runbook_url: https://github.com/gavinfancher/rusting/blob/main/docs/RUNBOOK.md#heartsunitsfailed
+        - alert: HeartsCPUThrottlingHigh
+          expr: |
+            sum by (pod) (rate(container_cpu_cfs_throttled_periods_total{namespace="hearts", pod=~"hearts-worker-.*", container="worker"}[5m]))
+            /
+            sum by (pod) (rate(container_cpu_cfs_periods_total{namespace="hearts", pod=~"hearts-worker-.*", container="worker"}[5m]))
+            > 0.25
+          for: 5m
+          labels: {severity: warning}
+          annotations:
+            summary: "Worker {{ $labels.pod }} is CPU throttled"
+            description: "More than 25% of CFS periods were throttled for 5 minutes on {{ $labels.pod }}; benchmark numbers will be skewed."
+            runbook_url: https://github.com/gavinfancher/rusting/blob/main/docs/RUNBOOK.md#heartscputhrottlinghigh
+        - alert: HeartsPostgresDown
+          expr: pg_up{namespace="hearts"} == 0
+          for: 1m
+          labels: {severity: critical}
+          annotations:
+            summary: Hearts Postgres is down
+            description: postgres-exporter cannot reach the database for 1 minute.
+            runbook_url: https://github.com/gavinfancher/rusting/blob/main/docs/RUNBOOK.md#heartspostgresdown
+        - alert: HeartsPodCrashLooping
+          expr: increase(kube_pod_container_status_restarts_total{namespace="hearts"}[15m]) > 2
+          for: 0m
+          labels: {severity: warning}
+          annotations:
+            summary: "Pod {{ $labels.pod }} is restarting repeatedly"
+            description: "Container {{ $labels.container }} in {{ $labels.pod }} restarted more than twice in 15 minutes (check logs and OOMKilled)."
+            runbook_url: https://github.com/gavinfancher/rusting/blob/main/docs/RUNBOOK.md#heartspodcrashlooping
+        - alert: HeartsAdvisorSlow
+          expr: histogram_quantile(0.95, sum by (le) (rate(hearts_advise_duration_seconds_bucket[5m]))) > 3
+          for: 5m
+          labels: {severity: warning}
+          annotations:
+            summary: Advisor p95 latency above 3s
+            description: The /api/advise 95th percentile latency has been over 3 seconds for 5 minutes.
+            runbook_url: https://github.com/gavinfancher/rusting/blob/main/docs/RUNBOOK.md#heartsadvisorslow
