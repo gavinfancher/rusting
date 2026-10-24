@@ -1,0 +1,58 @@
+# Noisy neighbor for experiment E7 (docs/EXPERIMENTS.md).
+#
+# A pod that burns CPU on the same node as a worker, to see how much a
+# co-located workload hurts a Guaranteed-QoS worker.
+#
+#   kubectl apply -f scripts/bench/noisy-neighbor.yaml      # starts on k8s-w1
+#   kubectl -n hearts delete pod noisy-neighbor              # ALWAYS clean up afterwards
+#
+# To pin it to another node:
+#   sed 's/k8s-w1/k8s-w2/' scripts/bench/noisy-neighbor.yaml | kubectl apply -f -
+#
+# Concepts:
+#  - nodeSelector on the well-known label kubernetes.io/hostname pins the pod
+#    to one node (it bypasses nothing: the scheduler still checks resource
+#    requests, which is why we request only 50m).
+#  - No `limits`, tiny `requests`: QoS class "Burstable". The pod can use every
+#    spare cycle on the node. Under contention the kernel's CFS gives each
+#    cgroup CPU weight proportional to its *request*, so the workers (request
+#    2 CPU, Guaranteed) win the fight for cores, but they still share the
+#    last-level cache, memory bandwidth, and (if the VMs expose hyperthreads)
+#    physical cores with this pod. Measuring that residual damage is E7.
+#  - Labels deliberately differ from the workers' (app.kubernetes.io/name:
+#    hearts-worker) so neither the worker Service, the PDB nor Prometheus
+#    treats this pod as a worker.
+#  - STRESS_WORKERS is how many busy loops to start (default 6 = every core of
+#    a 6-core node). Each loop is one shell process spinning on `:`.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: noisy-neighbor
+  namespace: hearts
+  labels:
+    app.kubernetes.io/name: noisy-neighbor
+    app.kubernetes.io/part-of: hearts-experiments
+spec:
+  nodeSelector:
+    kubernetes.io/hostname: k8s-w1
+  terminationGracePeriodSeconds: 1
+  restartPolicy: Never
+  containers:
+    - name: burn
+      image: busybox:1.37
+      env:
+        - name: STRESS_WORKERS
+          value: "6"
+      command:
+        - sh
+        - -c
+        - |
+          i=0
+          while [ "$i" -lt "$STRESS_WORKERS" ]; do
+            ( while :; do :; done ) &
+            i=$((i + 1))
+          done
+          wait
+      resources:
+        requests: {cpu: 50m, memory: 16Mi}
+        limits: {memory: 64Mi}
