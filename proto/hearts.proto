@@ -1,0 +1,159 @@
+// gRPC contract between the coordinator and workers.
+// Changing this file is a contract change: see docs/CONTRACTS.md.
+//
+// Card notation everywhere: rank + suit, e.g. "QS", "TH", "2C".
+// Strategy notation: "random" | "heuristic" | "pimc:N".
+
+syntax = "proto3";
+
+package hearts.v1;
+
+// ---------------------------------------------------------------------------
+// Served by the COORDINATOR on :50051. Workers pull work from it.
+// ---------------------------------------------------------------------------
+service WorkerService {
+  // Ask for up to `max_units` work units. An empty `units` list means there
+  // is no work right now: wait `retry_after_ms` and ask again. Calling this
+  // also registers the worker / refreshes its last_seen.
+  rpc LeaseWork(LeaseWorkRequest) returns (LeaseWorkResponse);
+
+  // Extend the leases on units this worker is still computing. Send every
+  // HEARTBEAT_SECONDS while a unit is in progress.
+  rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+
+  // Report a finished unit (stats) or a failed one (error). Idempotent:
+  // results are accepted from ANY worker as long as the unit is not already
+  // done (simulations are deterministic, so duplicates are identical).
+  rpc CompleteWork(CompleteWorkRequest) returns (CompleteWorkResponse);
+}
+
+message WorkerInfo {
+  // Stable for the life of the process. Use the pod name in k8s.
+  string worker_id = 1;
+  string pod_name = 2;
+  string node_name = 3;
+  uint32 threads = 4;
+}
+
+message LeaseWorkRequest {
+  WorkerInfo worker = 1;
+  uint32 max_units = 2;
+}
+
+message LeaseWorkResponse {
+  repeated WorkUnit units = 1;
+  uint32 retry_after_ms = 2;
+}
+
+message JobSpec {
+  uint64 seed = 1;
+  // Exactly 4 entries, indexed by slot.
+  repeated string strategies = 2;
+  bool no_points_first_trick = 3;
+}
+
+message WorkUnit {
+  int64 unit_id = 1;
+  int64 job_id = 2;
+  // Simulate hand indices [hand_start, hand_end).
+  uint64 hand_start = 3;
+  uint64 hand_end = 4;
+  JobSpec spec = 5;
+  int64 lease_expires_at_unix_ms = 6;
+  // 1 on the first lease, 2 after one reclaim, and so on.
+  uint32 attempt = 7;
+}
+
+message HeartbeatRequest {
+  string worker_id = 1;
+  repeated int64 unit_ids = 2;
+}
+
+message HeartbeatResponse {
+  // Units this worker no longer holds (lease expired and was taken by
+  // another worker, unit already done, or job cancelled). Stop computing
+  // them; finishing anyway is allowed but counts as wasted work.
+  repeated int64 lost_unit_ids = 1;
+  // New expiry for the units still held.
+  int64 lease_expires_at_unix_ms = 2;
+}
+
+message SlotStats {
+  uint64 points = 1;
+  uint64 hands = 2;
+  uint64 moons = 3;
+  uint64 queens = 4;
+  uint64 wins = 5;
+}
+
+message UnitStats {
+  uint64 hands = 1;
+  // Exactly 4 entries, indexed by strategy slot.
+  repeated SlotStats slots = 2;
+}
+
+message CompleteWorkRequest {
+  string worker_id = 1;
+  int64 unit_id = 2;
+  oneof outcome {
+    UnitStats stats = 3;
+    // The unit failed (e.g. panic). The unit returns to pending until
+    // MAX_ATTEMPTS is reached, then becomes failed.
+    string error = 4;
+  }
+  uint64 compute_ms = 5;
+}
+
+message CompleteWorkResponse {
+  // false: the unit was already done (or cancelled), so this result was
+  // discarded. The worker counts it in hearts_worker_wasted_units_total.
+  bool accepted = 1;
+  bool job_finished = 2;
+}
+
+// ---------------------------------------------------------------------------
+// Served by every WORKER on :50052. The coordinator fans advisor requests
+// out to all worker pods (found via the headless Service) and merges.
+// ---------------------------------------------------------------------------
+service AdvisorShard {
+  rpc Simulate(SimulateRequest) returns (SimulateResponse);
+}
+
+message PlayerView {
+  uint32 seat = 1;
+  repeated string hand = 2;
+  uint32 trick_leader = 3;
+  // Cards in the current trick, in play order starting with trick_leader.
+  repeated string trick = 4;
+  // Cards in completed tricks this hand.
+  repeated string played = 5;
+  // Exactly 4 entries (per seat): suit bitmask, bit0=C bit1=D bit2=S bit3=H.
+  repeated uint32 voids = 6;
+  bool hearts_broken = 7;
+  uint32 tricks_played = 8;
+  // Exactly 4 entries: points taken so far this hand, per seat.
+  repeated uint32 points = 9;
+  // Set if this player passed cards this hand.
+  optional uint32 passed_to = 10;
+  repeated string passed_cards = 11;
+  bool no_points_first_trick = 12;
+}
+
+message SimulateRequest {
+  PlayerView view = 1;
+  uint32 samples = 2;
+  uint64 seed = 3;
+  // The shard should stop starting new sample chunks after this long.
+  uint32 deadline_ms = 4;
+}
+
+message MoveStat {
+  string card = 1;
+  uint64 total_points = 2;
+  uint32 samples = 3;
+}
+
+message SimulateResponse {
+  repeated MoveStat moves = 1;
+  uint32 samples_done = 2;
+}

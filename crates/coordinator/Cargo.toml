@@ -1,0 +1,10 @@
+[package]
+name = "coordinator"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+hearts-core = { workspace = true }
+hearts-proto = { workspace = true }

@@ -1,0 +1,33 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+license = "MIT"
+
+# Shared dependency versions. Crates opt in with `foo = { workspace = true }`.
+# Agents: add crate-specific deps in your own crate's Cargo.toml, not here.
+[workspace.dependencies]
+hearts-core = { path = "crates/hearts-core" }
+hearts-proto = { path = "crates/hearts-proto" }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1.54.1", features = ["full"] }
+tonic = "0.14.6"
+tonic-prost = "0.14.6"
+tonic-prost-build = "0.14.6"
+prost = "0.14.4"
+rayon = "1.12.0"
+anyhow = "1"
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+# Keep line tables so `perf`/flamegraphs show function names in release builds.
+debug = "line-tables-only"
