@@ -116,12 +116,13 @@ Emits `event: progress` with `data: <Job JSON>` every 1s. When the job reaches a
 ### `POST /api/advise`
 Request:
 ```json
-{ "seat": 0, "hand": ["2C","QS","AH"], "trick_leader": 3, "trick": ["5H"], "played": [],
-  "voids": [[], ["C"], [], []], "hearts_broken": false, "tricks_played": 0,
+{ "seat": 0, "hand": ["3C","7C","JC","4D","6D","9D","QS","5S","TS","3H","8H","KH","AH"],
+  "trick_leader": 3, "trick": ["2C"], "played": [],
+  "voids": [[], [], [], []], "hearts_broken": false, "tricks_played": 0,
   "points": [0,0,0,0], "passed_to": 1, "passed_cards": ["AS","KS","9H"],
   "rules": {"no_points_first_trick": true}, "samples": 2000, "deadline_ms": 2000, "seed": 7 }
 ```
-Defaults: `seat` 0, `trick_leader` = seat, `trick`/`played`/`passed_cards` empty, `voids` all empty, `points` zeros, `hearts_broken` false, `tricks_played` = `played.len()/4`, `passed_to` null, `samples` 1000 (max 1,000,000), `deadline_ms` = `ADVISOR_DEFAULT_DEADLINE_MS`, `seed` random. The coordinator validates the view with `hearts_core::rules::validate_view` (400 on error), splits `samples` evenly across shards (shard `s` gets seed `child_seed(seed, s)`), merges, and responds:
+Defaults: `seat` 0, `trick_leader` = seat, `trick`/`played`/`passed_cards` empty, `voids` all empty, `points` zeros, `hearts_broken` false, `tricks_played` = `played.len()/4`, `passed_to` null, `samples` 1000 (max 1,000,000), `deadline_ms` = `ADVISOR_DEFAULT_DEADLINE_MS`, `seed` random. The view must be consistent: `hand.len() == 13 - tricks_played`, `played.len() == 4 * tricks_played`, and the first trick is led with 2C. The coordinator validates the view with `hearts_core::rules::validate_view` (400 on error), splits `samples` evenly across shards (shard `s` gets seed `child_seed(seed, s)`), merges, and responds:
 ```json
 { "best": "2C",
   "moves": [{"card": "2C", "avg_points": 1.12, "samples": 2000}, {"card": "QS", "avg_points": 9.8, "samples": 2000}],
