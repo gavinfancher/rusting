@@ -2,3 +2,4 @@
 .env
 *.profraw
 .DS_Store
+.claude/worktrees/
